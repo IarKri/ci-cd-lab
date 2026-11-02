@@ -33,7 +33,7 @@ jobs:
         id: run_container
         if: always() && steps.build.outcome == 'success'
         run: |
-          docker run -d --name iarkri-ci-cd-lab -p 8080:80 lab-site:${{ github.sha }}
+          docker run -d --name iarkri-ci-cd-lab -p 8080:80 iarkri-ci-cd-lab:${{ github.sha }}
 
       - name: Smoke test container
         if: always() && steps.run_container.outcome == 'success'
