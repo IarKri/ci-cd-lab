@@ -27,13 +27,13 @@ jobs:
       - name: Build Docker image
         id: build
         if: always() && steps.lint.outcome != 'cancelled'
-        run: docker build -t lab-site:${{ github.sha }} .
+        run: docker build -t iarkri-ci-cd-lab:${{ github.sha }} .
 
       - name: Run container
         id: run_container
         if: always() && steps.build.outcome == 'success'
         run: |
-          docker run -d --name lab-site -p 8080:80 lab-site:${{ github.sha }}
+          docker run -d --name iarkri-ci-cd-lab -p 8080:80 lab-site:${{ github.sha }}
 
       - name: Smoke test container
         if: always() && steps.run_container.outcome == 'success'
@@ -70,7 +70,7 @@ jobs:
 
       - name: Cleanup container
         if: always()
-        run: docker rm -f lab-site || true
+        run: docker rm -f iarkri-ci-cd-lab || true
 
       - name: Fail CI if HTML lint failed
         if: always() && steps.lint.outcome == 'failure'
