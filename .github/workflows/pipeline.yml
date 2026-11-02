@@ -1,0 +1,108 @@
+name: Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: HTML lint
+        id: lint
+        continue-on-error: true
+        run: npx --yes html-validate index.html
+
+      - name: Build Docker image
+        id: build
+        if: always() && steps.lint.outcome != 'cancelled'
+        run: docker build -t lab-site:${{ github.sha }} .
+
+      - name: Run container
+        id: run_container
+        if: always() && steps.build.outcome == 'success'
+        run: |
+          docker run -d --name lab-site -p 8080:80 lab-site:${{ github.sha }}
+
+      - name: Smoke test container
+        if: always() && steps.run_container.outcome == 'success'
+        run: |
+          set +e
+          curl -fsS http://localhost:8080 -o page.html
+          curl_status=$?
+
+          if [ "$curl_status" -ne 0 ]; then
+            echo "HTTP request failed"
+            exit 1
+          fi
+
+          grep -Fq "Кривцов Ярослав Олегович" page.html
+          name_status=$?
+
+          grep -Fq "IarKri" page.html
+          username_status=$?
+
+          grep -Fq "</html>" page.html
+          html_status=$?
+
+          echo "grep name exit code: $name_status"
+          echo "grep username exit code: $username_status"
+          echo "grep html exit code: $html_status"
+
+          if [ "$name_status" -ne 0 ] || \
+             [ "$username_status" -ne 0 ] || \
+             [ "$html_status" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "OK"
+
+      - name: Cleanup container
+        if: always()
+        run: docker rm -f lab-site || true
+
+      - name: Fail CI if HTML lint failed
+        if: always() && steps.lint.outcome == 'failure'
+        run: exit 1
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set lowercase image name
+        id: image
+        run: |
+          echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:latest
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
